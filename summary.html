@@ -1,0 +1,18 @@
+<html>
+	<head>
+		<style>
+			body  { margin: 0em; }
+			#summary { width: 100%; height: 100%; position: absolute; }
+		</style>
+		<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBm10t_NikqDRKpHzuMAIdvdFBn90AnGvE&libraries=geometry">
+		</script>
+		<script src=geoguessr.js></script>
+		<link rel=stylesheet href=geoguessr.css>
+	</head>
+	<body>
+		<div id=summary></div>
+		<script>
+			var summary = new geoguessr.Summary("summary", geoguessr.parse_summary_query(window.location.search.slice(1)));
+		</script>
+	</body>
+</html>

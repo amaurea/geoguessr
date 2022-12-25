@@ -1,0 +1,192 @@
+<html>
+	<head>
+		<style>
+			#map     { width: 100%; height: 60vh; }
+			body     { text-align: center; }
+			table    { margin-left: auto; margin-right: auto; }
+		</style>
+		<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBm10t_NikqDRKpHzuMAIdvdFBn90AnGvE&libraries=geometry">
+		</script>
+		<script src=geoguessr.js></script>
+	</head>
+	<body>
+		<form action=guess.html method=GET name=form>
+			<h1>Geoguessr builder</h1>
+			<table>
+				<tr><th>Rounds</th><td><input type=number id=ntask name=ntask value=5></td></tr>
+				<tr><th>Area</th><td>Whole world by default, draw polygon to restrict</td></tr>
+			</table>
+			<div id=map></div>
+			<table>
+				<tr><td colspan=2><button onclick=undo_point() form=dummy>Undo point</button></td></tr>
+				<tr><th>Images</th><td>
+					<input type=checkbox id=roadonly name=roadonly value=1>
+					<label for=roadonly>Roads only</label>
+					<input type=checkbox id=nearest  name=nearest  value=0>
+					<label for=nearest>Prefer "good" locations</label>
+				</td></tr>
+				<tr><th>Spread</th><td>
+					<input type=checkbox id=spread name=spread value=0 form=dummy>
+					<label for=spread>Maximize distance between points</label>
+				</td></tr>
+				<tr><th>Popdens</th><td>
+					<input type=checkbox id=popdens name=popdens value=0 form=dummy>
+					<label for=popdens>Weight by population density (only in Norway)</label>
+				</td></tr>
+				<tr><th>Mindens</th><td>
+					<input type=number step=any min=0 id=mindens name=mindens value=0 size=6>
+					<label for=mindens>Minimum population density (per km²) (only in Norway)</label>
+				</td></tr>
+				<!--
+				<tr><th>Random</th><td>
+					<input type=checkbox id=random name=random value=0 form=dummy>
+					<label for=random>Reroll locations each time this URL is used</label>
+				</td></tr>
+				-->
+				<tr><th>Tolerance</th><td>
+						<input type=number id=tol step=any name=tol value=0 size=6>
+						<label for=tol>Award max score if closer than this in meters</label>
+					</td></tr>
+			</table>
+			<input type=submit id=submit_button onclick="handle_submit(); return false">
+			<button id=save_button onclick="save_settings(false)" form=dummy>Save</button>
+		</form>
+		<script>
+			var map_div = document.getElementById("map");
+			var map     = new google.maps.Map(map_div, {
+				center: {lat:0,lng:0},
+				zoom: 1,
+				clickableIcons: false,
+				zoomControlOptions: { position: google.maps.ControlPosition.TOP_LEFT },
+			});
+			var path = new google.maps.Polygon({
+					path: new google.maps.MVCArray(),
+					strokeColor: "red",
+					strokeOpacity: 1.0,
+					strokeWeight: 3,
+					fillColor: "red",
+					fillOpacity: 0.1,
+					editable: true,
+					map: map,
+				});
+			google.maps.event.addListener(map, 'click', function (e) {
+					path.getPath().push(e.latLng);
+				});
+			function load_settings() {
+				var options = {};
+				var query   = window.location.search.slice(1);
+				var ntask    = geoguessr.get_option_int("ntask",    options, query, 5);
+				document.getElementById("ntask").value = ntask;
+				var roadonly = geoguessr.get_option_int("roadonly", options, query, 0);
+				document.getElementById("roadonly").checked = roadonly;
+				var nearest  = geoguessr.get_option_int("nearest",  options, query, 1);
+				document.getElementById("nearest").checked = !nearest;
+				var tol      = geoguessr.get_option_float("tol",    options, query, 0);
+				document.getElementById("tol").value = tol;
+				var spread   = geoguessr.get_option_int("spread",   options, query, 0);
+				document.getElementById("spread").checked = spread;
+				var popdens  = geoguessr.get_option_int("popdens",  options, query, 0);
+				document.getElementById("popdens").checked = popdens;
+				var mindens  = geoguessr.get_option_float("mindens",options, query, 0);
+				document.getElementById("mindens").value = mindens;
+				var bounds   = geoguessr.get_option_points("bounds", "lat","lng", options, query, null);
+				if(bounds != null) {
+					var boundsobj = new google.maps.LatLngBounds();
+					while(path.getPath().length > 0) path.getPath().pop();
+					for(var i = 0; i < bounds.length; i++) {
+						path.getPath().push(bounds[i]);
+						boundsobj.extend(bounds[i]);
+					}
+					map.fitBounds(boundsobj);
+				}
+			}
+
+			load_settings();
+
+			function save_settings(passive) {
+				var ntask    = parseInt(document.getElementById("ntask").value)+0;
+				var roadonly = document.getElementById("roadonly").checked+0;
+				var nearest  = !document.getElementById("nearest").checked+0;
+				var tol      = parseFloat(document.getElementById("tol").value)+0;
+				var spread   = document.getElementById("spread").checked+0;
+				var popdens  = document.getElementById("popdens").checked+0;
+				var mindens  = parseFloat(document.getElementById("mindens").value);
+				var res = "ntask="+ntask+"&roadonly="+roadonly+"&nearest="+nearest+"&tol="+tol+"&spread="+spread+"&popdens="+popdens+"&mindens="+mindens;
+				var bounds   = path.getPath().getArray();
+				if(bounds.length >= 3) {
+					var lats = btoa(bounds.map(function(pos) { return pos.lat().toFixed(6); }));
+					var lngs = btoa(bounds.map(function(pos) { return pos.lng().toFixed(6); }));
+					res += "&lat=" + lats + "&lng=" + lngs;
+				}
+				var url = "build.html?" + res;
+				if(passive) history.replaceState(null, "dummy", url);
+				else window.location = url;
+			}
+			function undo_point() {
+				path.getPath().pop();
+			}
+			function handle_key(e) {
+				e = e || window.event;
+				if(e.keyCode == 8)
+					undo_point();
+			}
+			function del_hidden(name) {
+				var elem = document.getElementById("hidden_"+name);
+				if(elem != null) elem.remove();
+			}
+			function add_hidden(parent, name, value) {
+				var elem  = document.createElement("input");
+				elem.type = "hidden";
+				elem.name = name;
+				elem.value= value;
+				elem.id   = "hidden_" + name;
+				parent.appendChild(elem);
+			}
+
+			async function handle_submit() {
+				// Build bounds if necessary
+				var form = document.forms["form"];
+				var points = path.getPath().getArray();
+				save_settings(true);
+				del_hidden("lat");
+				del_hidden("lng");
+				if(points.length >= 3) {
+					add_hidden(form, "lat", btoa(points.map(function (point) { return point.lat().toFixed(6); }).join(",")));
+					add_hidden(form, "lng", btoa(points.map(function (point) { return point.lng().toFixed(6); }).join(",")));
+				}
+				// Handle randomness
+				//if (!document.getElementById("random").checked) {
+				// We don't want to reroll points each time, so roll them here instead
+				var  ntask    = parseInt(document.getElementById("ntask").value);
+				var  roadonly = document.getElementById("roadonly").checked;
+				var  nearest  = !document.getElementById("nearest").checked;
+				var  popdens  = document.getElementById("popdens").checked;
+				var  mindens  = parseFloat(document.getElementById("mindens").value);
+				var  spread   = document.getElementById("spread").checked;
+
+				// Handle the prior
+				if(popdens || mindens) {
+					// Convert from limit on population density to limit on pop in cell. Cells are 250m squared
+					var minpop  = mindens * 0.250**2;
+					// This is a bit hacky, but this reads the population density, but skips cells below
+					// minpop, and if the last argument is true, gives all cells equal weight by overriding
+					// the population in the cell.
+					var popinfo = await geoguessr.read_popinfo("norge_tetthet_250.txt", minpop, !popdens);
+					if(points.length < 3) prior = geoguessr.prior_pop.bind(null, popinfo);
+					else prior = geoguessr.prior_poly_pop.bind(null, points, popinfo);
+				} else {
+					if(points.length < 3) prior = geoguessr.prior_uniform;
+					else prior = geoguessr.prior_poly_uniform.bind(null, points);
+				}
+				geoguessr.draw_positions(ntask, function (datas) {
+					add_hidden(form, "tlat", btoa(datas.map(function (data) { return data.location.latLng.lat().toFixed(6); }).join(",")));
+					add_hidden(form, "tlng", btoa(datas.map(function (data) { return data.location.latLng.lng().toFixed(6); }).join(",")));
+					form.submit();
+				}, {prior: prior, roadonly: roadonly, nearest: nearest, spread:spread});
+				//}
+				//else form.submit();
+			}
+			document.addEventListener("keydown", handle_key);
+		</script>
+	</body>
+</html>
