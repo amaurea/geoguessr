@@ -34,7 +34,7 @@
 #map_button, #pano_button { height: 75px; position: absolute; right: 10px; bottom: 25px; }
 #pano_button { z-index: 2; }
 #map_button  { z-index: 12; }
-#reload_button { height: 30px; position: absolute; left: 10px; bottom: 25px; z-index: 12; background: white; border-radius: 20px; padding: 8px; }
+#reload_button { height: 2rem; position: absolute; left: 10px; bottom: 1.8rem; z-index: 12; background: white; border-radius: 1rem; padding: 8px; }
 #task_wrapper { display: flex; justify-content: center; align-items: center; height: 100%; width: 100%; }
 #task_summary { z-index: 12; text-align: center; font-size: 200%; font-weight: bold; color: black; text-shadow: -1px 0 white, 0 1px white, 1px 0 white, 0 -1px white; }
 
@@ -45,3 +45,51 @@
 #summary_info table { margin: 0 auto; border-spacing: 1em 0; }
 #summary_info h1 { color: blue; }
 #summary_info td { text-align: right; }
+
+/* Trigonometry widget */
+#trigwidget   { position: absolute; top: 6rem; left: 5px; z-index: 12; }
+#trigwidget * { box-sizing: border-box; }
+#trigwidget > ul { list-style-type: none; padding: 0; margin: 0; width: 3rem; }
+#trigwidget > ul li { position: relative; }
+#trigwidget .submenu li { display: inline-block; margin-left: 0.2rem; }
+.symbol {
+	width:  3rem;
+	height: 3rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0rem;
+	padding: 0rem;
+	font-size: 2.5rem;
+	border-radius: 1.5rem;
+	margin-bottom: 0.2rem;
+	background: black;
+	color: white;
+}
+#trigwidget li { pointer-events: none; }
+#trigwidget li .symbol { pointer-events: all; }
+#trigwidget .symbol img { width: 2.0rem; }
+#trigdel  > .symbol img { width: 1.5rem; }
+#trigdel  > .symbol { font-size: 2.0rem; }
+#trigwidget .submenu {
+	position: absolute; top: 0rem; left: 0.5rem;
+}
+#trigwidget .submenu .plus { font-weight: bold; }
+#trigwidget .submenu .num  { font-size: 2.3rem; }
+/* Active trig item, the one we're currently registering for */
+#trigwidget .symbol.active { border: 3px solid white; }
+
+.trigitem1 { color: red; }
+.trigitem2 { color: green; }
+.trigitem3 { color: blue; }
+.trigitem4 { color: magenta; }
+.trigitem5 { color: orange; }
+.trigitem6 { color: cyan; }
+
+/* By default the menu and submenues will be hidden */
+#trigwidget .menu    { display: none; }
+#trigdel    .submenu { display: none; }
+#trigwidget .submenu { width: 90vw; }
+
+/* Mouse cursor for trigwidget */
+#trigwidget .symbol { cursor: pointer; }

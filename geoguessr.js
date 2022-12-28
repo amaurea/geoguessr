@@ -51,10 +51,10 @@ my.deproject_tan = function(iang, ang0) {
 	// iang are coordinates in the flat tangent plane
 	// system. In 3d, these coordinates are [1,iang[0],iang[1]]
 	// next rotate to coordinates centered on ang0.
-	return rect2ang(rotz(roty([1,iang[0],iang[1]],-ang0[1]),ang0[0]));
+	return my.rect2ang(my.rotz(my.roty([1,iang[0],iang[1]],-ang0[1]),ang0[0]));
 }
 my.project_tan = function(ang, ang0) {
-	var rang = roty(rotz(ang2rect(ang),-ang0[0]),ang0[1]);
+	var rang = my.roty(my.rotz(my.ang2rect(ang),-ang0[0]),ang0[1]);
 	return [rang[1]/rang[0], rang[2]/rang[0]];
 }
 
@@ -76,8 +76,19 @@ my.calc_mouse_pov = function(e, pano) {
 	var pov = game.pano.getPov();
 	var iheading = iwidth/2**pov.zoom * x/w;
 	var ipitch   = iwidth/2**pov.zoom * y/w;
-	var ang = deproject_tan([iheading*deg,ipitch*deg],[pov.heading*deg,pov.pitch*deg]);
-	return {heading:ang[0]/deg, pitch:ang[1]/deg};
+	var ang = my.deproject_tan([iheading*my.deg,ipitch*my.deg],[pov.heading*my.deg,pov.pitch*my.deg]);
+	return {heading:ang[0]/my.deg, pitch:ang[1]/my.deg};
+}
+
+my.geo_move = function(pos_from, heading, distance) {
+	var tmp;
+	tmp = my.roty([0,0,1], -distance/my.earth_radius);
+	tmp = my.rotz(tmp, -heading*my.deg);
+	tmp = my.roty(tmp, (90-pos_from.lat())*my.deg);
+	tmp = my.rotz(tmp, pos_from.lng()*my.deg);
+	tmp = my.rect2ang(tmp);
+	var pos_to = {lng:tmp[0]/my.deg, lat:tmp[1]/my.deg};
+	return pos_to;
 }
 
 // Returns the index in arr where val must be inserted to maintain
@@ -459,6 +470,12 @@ function add_element(parent, type, id) {
 	parent.appendChild(elem);
 	return elem;
 };
+function add_element_class(parent, type, cname) {
+	var elem = document.createElement(type);
+	elem.className = cname;
+	parent.appendChild(elem);
+	return elem;
+};
 
 my.format_summary_query = function(tasks) {
 	var lats_true  = btoa(tasks.map(function(task) { return task.pos_true.lat().toFixed(6); }).join(","));
@@ -559,6 +576,7 @@ my.Game = function(id, options) {
 			pos_prev: null,
 			dist_moved: 0,
 			time_spent: 0,
+			trigs: [],
 		};
 	}
 	this.scale     = my.get_scale(this.bounds);
@@ -586,6 +604,47 @@ my.Game = function(id, options) {
 	this.moved_text    = add_element(this.container,   "div",     "moved_text");
 	this.task_wrapper  = add_element(this.map_screen,  "div",     "task_wrapper");
 	this.task_summary  = add_element(this.task_wrapper,"div",     "task_summary");
+	// The trigonometry widget will be in both screens, so add it to the
+	// top container
+	this.trigwidget = add_element(this.container,  "div", "trigwidget");
+	// The main trig button
+	this.trigbutton = add_element(this.trigwidget, "div", "trigbutton");
+	this.trigbutton.classList.add("symbol");
+	var tmp = document.createElement("img");
+	tmp.src = "triangulation_symbol.svg"
+	this.trigbutton.appendChild(tmp);
+	// The menu that pops up when you click it
+	this.trigmenu= add_element_class(this.trigwidget, "ul", "menu");
+	this.trigadd = add_element(this.trigmenu, "li", "trigadd");
+	// The submenu that pops up when you click on each of these
+	// Will need to be dynamically repopulated, so only outer part here
+	this.trigaddbutton = add_element_class(this.trigadd, "div", "symbol");
+	var tmp = document.createElement("img");
+	tmp.src = "target_symbol.svg";
+	this.trigaddbutton.appendChild(tmp);
+	this.trigaddmenu = add_element_class(this.trigadd, "ul", "submenu");
+	this.trigaddbutton.addEventListener("click", function(e) {
+		this.trigaddmenu.style.display = "block";
+		this.trigdelmenu.style.display = "none";
+	}.bind(this));
+	// And the same for trigdel
+	this.trigdel = add_element(this.trigmenu, "li", "trigdel");
+	this.trigdelbutton = add_element_class(this.trigdel, "div", "symbol");
+	var tmp = document.createElement("img");
+	tmp.src = "cross_symbol.svg";
+	this.trigdelbutton.appendChild(tmp);
+	this.trigdelmenu = add_element_class(this.trigdel, "ul", "submenu");
+	this.trigdelbutton.addEventListener("click", function(e) {
+		this.trigaddmenu.style.display = "none";
+		this.trigdelmenu.style.display = "block";
+		// Disable any pending registering
+		this.trig_set_registering(false);
+	}.bind(this));
+	// The current trigonometry mode
+	this.trigindex = 0;
+	this.trig_registering = false;
+	this.trig_colors = ["red", "green", "blue", "magenta", "orange", "cyan"];
+	this.mapdrawings = [];
 
 	this.pano = new google.maps.StreetViewPanorama(this.pano_div, {
 		addressControl: false,
@@ -642,6 +701,9 @@ my.Game = function(id, options) {
 		this.update_markers();
 		this.update_dist_display();
 		this.update_time_display();
+		this.trig_menu_update();
+		this.trig_map_update();
+		this.trig_set_registering(false);
 	};
 
 	// Handle panorama motion
@@ -795,12 +857,202 @@ my.Game = function(id, options) {
 		this.set_task(0);
 	}.bind(this);
 
+	
 	this.map.addListener("click", function(e) {
-		var task = this.get_task();
-		if(task.done) return;
-		task.pos_guess = e.latLng;
-		this.update_markers();
+		if(this.trig_registering) {
+			var trigs = this.get_task().trigs;
+			trigs[this.trigindex].pos = e.latLng;
+			this.trig_map_update();
+			this.trig_set_registering(false);
+			return false;
+		} else {
+			var task = this.get_task();
+			if(task.done) return;
+			task.pos_guess = e.latLng;
+			this.update_markers();
+		}
 	}.bind(this));
+	this.pano_div.addEventListener("click", function(e) {
+		if(this.trig_registering) {
+			var trigs = this.get_task().trigs;
+			var pov   = my.calc_mouse_pov(e, this.pano);
+			trigs[this.trigindex].heading = pov.heading;
+			trigs[this.trigindex].pitch   = pov.pitch;
+			this.trig_map_update();
+			this.trig_set_registering(false);
+		}
+	}.bind(this));
+
+	// Trigonometry mode stuff
+	// Main menu
+	this.trigbutton.addEventListener("click", function(e) {
+		this.trig_menu_toggle();
+	}.bind(this));
+	this.trig_set_registering = function(onoff) {
+		if(onoff) {
+			this.trig_registering = true;
+			this.pano.setOptions({clickToGo:false});
+			// Mark current register target as active
+			var tmp = document.querySelector("#trigadd .submenu :nth-child("+(this.trigindex+1)+") .symbol");
+			tmp.classList.add("active");
+		} else {
+			this.trig_registering = false;
+			setTimeout(this.pano.setOptions.bind(this.pano), 500, {clickToGo:true});
+			// Remove register highlighting
+			document.querySelectorAll("#trigadd .submenu .symbol").forEach(elem => elem.classList.remove("active"));
+		}
+	}
+	this.trig_menu_show = function() { this.trigmenu.style.display = "block"; }
+	this.trig_menu_hide = function() {
+		this.trigmenu.style.display = "none";
+		// Disable any registering we may have going on
+		this.trig_set_registering(false);
+	}
+	this.trig_menu_toggle = function() {
+		if(this.trigmenu.style.display == "block") this.trig_menu_hide();
+		else this.trig_menu_show();
+	}
+	// Update the trigwidget submenus based on what
+	// tripoints have been created
+	this.trig_menu_update = function() {
+		var task  = this.get_task();
+		var ntrig = task.trigs.length;
+		// Add menu
+		this.trigaddmenu.innerHTML = "";
+		for(let i = 0; i < ntrig; i++) {
+			var row  = document.createElement("li");
+			var elem = document.createElement("div");
+			elem.classList.add("symbol");
+			elem.classList.add("num");
+			elem.classList.add("trigitem"+(task.trigs[i].color+1));
+			elem.innerHTML = (i+1);
+			elem.addEventListener("click", function (e) {
+				this.trig_register(i);
+			}.bind(this));
+			row.appendChild(elem);
+			this.trigaddmenu.appendChild(row);
+		}
+		var row  = document.createElement("li");
+		var elem = document.createElement("div");
+		elem.classList.add("symbol");
+		elem.classList.add("plus");
+		elem.innerHTML = "+";
+		elem.addEventListener("click", function (e) {
+			var col = this.trig_find_free_color();
+			this.get_task().trigs.push({
+				heading:null,
+				pitch:null,
+				pos:null,
+				color:col,
+				pointelem:null,
+				lineelem:null,
+				panoelem:null,
+			});
+			this.trig_register(ntrig);
+		}.bind(this));
+		row.appendChild(elem);
+		this.trigaddmenu.appendChild(row);
+		// Del menu
+		this.trigdelmenu.innerHTML = "";
+		for(let i = 0; i < ntrig; i++) {
+			var row  = document.createElement("li");
+			var elem = document.createElement("div");
+			elem.classList.add("symbol");
+			elem.classList.add("num");
+			elem.classList.add("trigitem"+(task.trigs[i].color+1));
+			elem.innerHTML = (i+1);
+			elem.addEventListener("click", function (e) {
+				this.trig_delete(i);
+			}.bind(this));
+			row.appendChild(elem);
+			this.trigdelmenu.appendChild(row);
+		}
+	}
+	this.trig_find_free_color = function() {
+		var trigs = this.get_task().trigs;
+		// First get the set of all active colors
+		var cols = [];
+		for(var i = 0; i < trigs.length; i++)
+			cols.push(trigs[i].color);
+		cols.sort(function(a,b){return a-b});
+		var i;
+		for(i = 0; i < cols.length; i++) {
+			if(cols[i] > i) break;
+		}
+		return i;
+	}
+	this.trig_get_color = function(i) {
+		if(i >= 0 && i < this.trig_colors.length)
+			return this.trig_colors[i];
+		else
+			return "white";
+	}
+	this.trig_delete = function(i) {
+		var trigs = this.get_task().trigs;
+		if(i >= 0 && i < trigs.length)
+			trigs.splice(i, 1);
+		this.trig_menu_update();
+		this.trig_map_update();
+	}
+	this.trig_register = function(i) {
+		this.trigindex = i;
+		this.trig_menu_update();
+		this.trig_set_registering(true);
+	}
+	this.trig_map_clear = function() {
+		for(var i = 0; i < this.mapdrawings.length; i++)
+			this.mapdrawings[i].setMap(null);
+		this.mapdrawings = [];
+	}
+	this.trig_map_update = function() {
+		this.trig_map_clear();
+		var trigs = this.get_task().trigs;
+		for(var i = 0; i < trigs.length; i++) {
+			var trig = trigs[i];
+			// Then build the new ones
+			if(trig.pos) {
+				trig.pointelem = new google.maps.Marker({
+					position: trig.pos,
+					icon: {
+						path: google.maps.SymbolPath.CIRCLE,
+						fillColor: this.trig_get_color(trig.color),
+						strokeColor: this.trig_get_color(trig.color),
+						scale: 4,
+					},
+				});
+				trig.pointelem.setMap(this.map);
+				this.mapdrawings.push(trig.pointelem);
+			}
+			if(trig.pos && trig.heading) {
+				trig.lineelem = new google.maps.Polyline({
+					path:[trig.pos, my.geo_move(trig.pos, trig.heading+180, 100e3)],
+					geodesic: true,
+					strokeColor: this.trig_get_color(trig.color),
+					strokeWeight: 2,
+				});
+				trig.lineelem.setMap(this.map);
+				this.mapdrawings.push(trig.lineelem);
+			}
+			if(trig.heading) {
+				// Compute virtual position so we can display a marker
+				// there. This has some limitations: We must make up
+				// not too far away distance, and street view markers do not
+				// support elevation. So the marker will be at the horizon.
+				var offset_pos = my.geo_move(this.get_task().pos_true, trig.heading, 100);
+				trig.panoelem = new google.maps.Marker({
+					position: offset_pos,
+					icon: {
+						path: google.maps.SymbolPath.CIRCLE,
+						fillColor: this.trig_get_color(trig.color),
+						strokeColor: this.trig_get_color(trig.color),
+						scale: 15,
+					},
+				});
+				trig.panoelem.setMap(this.pano);
+				this.mapdrawings.push(trig.panoelem);
+			}
+		}
+	}
 
 	this.get_task = function () {
 		return this.tasks[my.mod(this.i,this.tasks.length)];
@@ -828,6 +1080,8 @@ my.Game = function(id, options) {
 	} else {
 		my.get_positions(_opts.points, import_datas);
 	}
+
+	this.trig_menu_update();
 };
 
 my.Summary = function(id, tasks) {
