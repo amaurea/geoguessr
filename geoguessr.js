@@ -13,6 +13,16 @@ my.pad = function(n, width, z) {
 	return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
 }
 
+my.latlng2ang = function(latlng) {
+	latlng = new google.maps.LatLng(latlng);
+	return [latlng.lng()*my.deg, latlng.lat()*my.deg];
+}
+my.ang2latlng = function(ang) {
+	return new google.maps.LatLng({lat:ang[1]/my.deg,lng:ang[0]/my.deg});
+}
+my.latlng2rect = function(latlng) { return my.ang2rect(my.latlng2ang(latlng)); };
+my.rect2latlng = function(rect)   { return my.ang2latlng(my.rect2ang(rect));   };
+
 // coordinate functions. These will be used to support getting the
 // coordinates under the mouse. This is only necessary because google
 // didn't publish this as part of their api
@@ -71,6 +81,9 @@ my.calc_mouse_pov = function(e, pano) {
 	var rect = e.target.getBoundingClientRect();
 	var w = rect.right - rect.left;
 	var h = rect.bottom - rect.top;
+	if(e.touches != undefined) {
+		var e = e.touches[0];
+	}
 	var x = e.clientX - rect.left - w/2;
 	var y = -(e.clientY - rect.top - h/2);
 	var pov = game.pano.getPov();
@@ -396,14 +409,14 @@ function _draw_position_sorter_pos(datas, nmax, lim, spread) {
 }
 
 my.hash = function (s) {
-  var hash = 0, i, chr;
-  if (s.length === 0) return hash;
-  for (i = 0; i < s.length; i++) {
-    chr   = s.charCodeAt(i);
-    hash  = ((hash << 5) - hash) + chr;
-    hash |= 0; // Convert to 32bit integer
-  }
-  return hash;
+	var hash = 0, i, chr;
+	if (s.length === 0) return hash;
+	for (i = 0; i < s.length; i++) {
+		chr   = s.charCodeAt(i);
+		hash  = ((hash << 5) - hash) + chr;
+		hash |= 0; // Convert to 32bit integer
+	}
+	return hash;
 };
 
 my.parse_query_array = function(query, key) {
@@ -521,7 +534,7 @@ my.calc_score = function(r, rmax, tol) {
 	tol = tol || 0
 	var x = Math.max(r-tol,0)/Math.max(rmax-tol,tol);
 	return my.score_core(x);
-}
+};
 
 // Compute the normalized score given a normalized distance.
 // input: x in range [0:inf], but with 1 being the typical max
@@ -529,6 +542,215 @@ my.calc_score = function(r, rmax, tol) {
 // Score should be almost none by the time we reach 1 in input
 my.score_core = function(x) {
 	return Math.exp(-x/0.05);
+};
+
+// Simple linear algebra stuff. Taken from https://gist.github.com/codecontemplator/6b3db07a29e435940ffc
+my.diagonalize = function(M) {
+  var m = M.length;
+  var n = M[0].length;
+  for(var k=0; k<Math.min(m,n); ++k) {
+    // Find the k-th pivot
+    i_max = my.findPivot(M, k);
+    if (M[i_max, k] == 0)
+      throw "matrix is singular";
+    my.swap_rows(M, k, i_max);
+    // Do for all rows below pivot
+    for(var i=k+1; i<m; ++i) {
+      // Do for all remaining elements in current row:
+      var c = M[i][k] / M[k][k];
+      for(var j=k+1; j<n; ++j) {
+        M[i][j] = M[i][j] - M[k][j] * c;
+      }
+      // Fill lower triangular matrix with zeros
+      M[i][k] = 0;
+    }
+  }
+};
+
+my.findPivot = function(M, k) {
+  var i_max = k;
+  for(var i=k+1; i<M.length; ++i) {
+    if (Math.abs(M[i][k]) > Math.abs(M[i_max][k])) {
+      i_max = i;
+    }
+  }
+  return i_max;
+};
+
+my.swap_rows = function(M, i_max, k) {
+  if (i_max != k) {
+    var temp = M[i_max];
+    M[i_max] = M[k];
+    M[k] = temp;
+  }
+};
+
+my.makeM = function(M, b) {
+  for(var i=0; i<M.length; ++i) {
+    M[i].push(b[i]);
+  }
+};
+
+my.substitute = function(M) {
+  var m = M.length;
+  for(var i=m-1; i>=0; --i) {
+    var x = M[i][m] / M[i][i];
+    for(var j=i-1; j>=0; --j) {
+      M[j][m] -= x * M[j][i];
+      M[j][i] = 0;
+    }
+    M[i][m] = x;
+    M[i][i] = 1;
+  }
+};
+
+my.extractX = function(M) {
+  var x = [];
+  var m = M.length;
+  var n = M[0].length;
+  for(var i=0; i<m; ++i){
+    x.push(M[i][n-1]);
+  }
+  return x;
+};
+
+my.solve = function(A, b) {
+  my.makeM(A,b);
+  my.diagonalize(A);
+  my.substitute(A);
+  var x = my.extractX(A);
+  return x;
+}
+
+my.transpose = function(A) {
+	var AT = [];
+	for(var c = 0; c < A[0].length; c++) {
+		orow = [];
+		for(var r = 0; r < A.length; r++) {
+			orow.push(A[r][c]);
+		}
+		AT.push(orow);
+	}
+	return AT;
+};
+
+my.vscale = function(v, a) {
+	var va = [];
+	for(var i = 0; i < v.length; i++)
+		va.push(v[i]*a);
+	return va;
+};
+
+my.vadd = function(v1,v2) {
+	var v3 = [];
+	for(var i = 0; i < v1.length; i++)
+		v3.push(v1[i]+v2[i]);
+	return v3;
+};
+
+my.vsub = function(v1,v2) {
+	var v3 = [];
+	for(var i = 0; i < v1.length; i++)
+		v3.push(v1[i]-v2[i]);
+	return v3;
+};
+
+my.vlen = function(v) {
+	var s = 0;
+	for(var i = 0; i < v.length; i++)
+		s += v[i]*v[i];
+	return Math.sqrt(s);
+};
+
+// Helper functions for compass correction.
+
+// Find the intersection between the geodesic that
+// passes through p1 and p2 and the one passing through
+// q1 and q2, all of which are cartesian coordinates [x,y,z]
+// with the Earth's center at [0,0,0].
+// The p plane is parameterized by p(a,b) = a*p1 + b*p2,
+// and the q plane by q(a,b) = a*q1 + b*q2. The intersecting
+// line is then a*p1+b*p2 = c*q1+d*q2
+// 4 unknowns, 3 equations. Solve for b,c,d given a. Solution
+// will clearly be proportional to a, so can solve for a=1
+// without loss of generality. This gives the equation system
+//  [p21  -q11  -q21] [b] = [-p11]
+//  [p22  -q12  -q22] [c]   [-p12]
+//  [p23  -q13  -q23] [d]   [-p13]
+// or
+//  A u = v, where A = [p2 -q1 -q2] and v = -p1
+// Given u, our line is given by the points p = a*(p1+u[0]*p2)
+// This intersects the where when |p| = R, which happens when
+//  a = ±R/|p1+u[0]*p2|
+// Will return the positive solution, which is the one closest to
+// p1
+my.geodesic_intersect_cart = function(p1, p2, q1, q2, R) {
+	// Solve for u = [b,c,d] given a=1
+	var A = my.transpose([p2, my.vscale(q1,-1), my.vscale(q2,-1)]);
+	var v = my.vscale(p1, -1);
+	var u = my.solve(A, v);
+	// Solve for a
+	var vdir = my.vadd(p1, my.vscale(p2,u[0]));
+	var a = R/my.vlen(vdir);
+	// Evaluate coordinates of solution
+	var pout = my.vscale(vdir, a);
+	return pout;
+}
+
+// Given two triangulation lines, return their
+// intersection as a LatLng
+my.geodesic_intersect_trig = function(trig1, trig2, offset) {
+	if(offset == undefined) offset = 0;
+	var p1 = my.latlng2rect(trig1.pos);
+	var q1 = my.latlng2rect(trig2.pos);
+	var p2 = my.latlng2rect(my.geo_move(trig1.pos, trig1.heading+offset, 100e3));
+	var q2 = my.latlng2rect(my.geo_move(trig2.pos, trig2.heading+offset, 100e3));
+	var pout = my.geodesic_intersect_cart(p1, p2, q1, q2, 1);
+	var opos = my.rect2latlng(pout);
+	return opos;
+};
+
+// Given multiple triangulation lines, return the mean intersection point
+// as well as the standard deviation of the intersections around this
+my.multi_intersect_trig = function(trigs, offset) {
+	// Compute all combinations of intersections
+	var pouts = [];
+	for(var i = 0; i < trigs.length; i++) {
+		for(var j = i+1; j < trigs.length; j++) {
+			var pout = my.latlng2rect(my.geodesic_intersect_trig(trigs[i], trigs[j], offset));
+			pouts.push(pout);
+		}
+	}
+	// Find the mean and standard deviation of these. More numerically stable to do it
+	// in two steps
+	var vmean = [0,0,0];
+	for(var i = 0; i < pouts.length; i++) {
+		for(var j = 0; j < 3; j++)
+			vmean[j] += pouts[i][j];
+	}
+	for(var j = 0; j < 3; j++)
+		vmean[j] /= pouts.length;
+	var vvar  = 0;
+	for(var i = 0; i < pouts.length; i++) {
+		for(var j = 0; j < 3; j++)
+			vvar += (pouts[i][j]-vmean[j])**2;
+	}
+	vvar /= pouts.length;
+	var vstd = Math.sqrt(vvar);
+	return [vmean, vstd];
+};
+
+// Solve for the compass offset that minimizes the
+my.solve_compass_offset = function(trigs) {
+	function chisq(x) {
+		offset = x[0];
+		var [vmean, vstd] = my.multi_intersect_trig(trigs, offset);
+		// Want the std in units of m
+		vstd *= my.earth_radius;
+		return vstd**2;
+	}
+	var res = numopt.powell(chisq, [0]);
+	return [res.x[0], res.fval];
 };
 
 // Construct a new game using the given map panorama and map
@@ -872,7 +1094,8 @@ my.Game = function(id, options) {
 			this.update_markers();
 		}
 	}.bind(this));
-	this.pano_div.addEventListener("click", function(e) {
+
+	this.handle_pano_click = function(e) {
 		if(this.trig_registering) {
 			var trigs = this.get_task().trigs;
 			var pov   = my.calc_mouse_pov(e, this.pano);
@@ -881,7 +1104,10 @@ my.Game = function(id, options) {
 			this.trig_map_update();
 			this.trig_set_registering(false);
 		}
-	}.bind(this));
+	}.bind(this);
+
+	this.pano_div.addEventListener("click", this.handle_pano_click);
+	this.pano_div.addEventListener("touchstart", this.handle_pano_click);
 
 	// Trigonometry mode stuff
 	// Main menu
