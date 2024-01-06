@@ -750,7 +750,8 @@ my.solve_compass_offset = function(trigs) {
 		return vstd**2;
 	}
 	var res = numopt.powell(chisq, [0]);
-	return [res.x[0], res.fval];
+	/*return [res.x[0], res.fval];*/
+	return res.x[0];
 };
 
 // Construct a new game using the given map panorama and map
@@ -803,6 +804,9 @@ my.Game = function(id, options) {
 	}
 	this.scale     = my.get_scale(this.bounds);
 
+	// fitBound doesn't work when the map is hidden
+	this.pending_fit_bounds = null;
+
 	// Insert divs for each element
 	this.map_screen    = add_element(this.container,   "div",     "map_screen");
 	this.pano_screen   = add_element(this.container,   "div",     "pano_screen");
@@ -826,9 +830,10 @@ my.Game = function(id, options) {
 	this.moved_text    = add_element(this.container,   "div",     "moved_text");
 	this.task_wrapper  = add_element(this.map_screen,  "div",     "task_wrapper");
 	this.task_summary  = add_element(this.task_wrapper,"div",     "task_summary");
+	this.leftbar    = add_element(this.container,  "div", "leftbar");
 	// The trigonometry widget will be in both screens, so add it to the
 	// top container
-	this.trigwidget = add_element(this.container,  "div", "trigwidget");
+	this.trigwidget = add_element(this.leftbar,  "div", "trigwidget");
 	// The main trig button
 	this.trigbutton = add_element(this.trigwidget, "div", "trigbutton");
 	this.trigbutton.classList.add("symbol");
@@ -867,6 +872,20 @@ my.Game = function(id, options) {
 	this.trig_registering = false;
 	this.trig_colors = ["red", "green", "blue", "magenta", "orange", "cyan"];
 	this.mapdrawings = [];
+
+	// The auto-compass
+	this.compass_offset = 0;
+	this.autocompass_active = false;
+	this.autocompass = add_element(this.leftbar, "div", "autocompass");
+	this.autocompass.className = "inactive";
+	this.autocompass_button = add_element_class(this.autocompass, "div", "symbol")
+	var tmp = document.createElement("img");
+	tmp.src = "compass_icon.svg";
+	this.autocompass_button.appendChild(tmp);
+	/*this.autocompass_button.innerHTML = "🧭";*/
+	this.autocompass_button.addEventListener("click", function(e) {
+		this.autocompass_toggle();
+	}.bind(this));
 
 	this.pano = new google.maps.StreetViewPanorama(this.pano_div, {
 		addressControl: false,
@@ -917,7 +936,7 @@ my.Game = function(id, options) {
 			var bounds = new google.maps.LatLngBounds();
 			for(var i = 0; i < this.bounds.length; i++)
 				bounds.extend(this.bounds[i]);
-			this.map.fitBounds(bounds);
+			this.set_bounds(bounds);
 		}
 		this.update_status();
 		this.update_markers();
@@ -926,7 +945,13 @@ my.Game = function(id, options) {
 		this.trig_menu_update();
 		this.trig_map_update();
 		this.trig_set_registering(false);
+		this.autocompass_reset();
 	};
+
+	this.set_bounds = function(bounds) {
+		if(this.mode == "map") this.map.fitBounds(bounds);
+		else this.pending_fit_bounds = bounds;
+	}
 
 	// Handle panorama motion
 	this.pano.addListener("position_changed", function () {
@@ -1020,6 +1045,10 @@ my.Game = function(id, options) {
 		if(mode == "map") {
 			this.map_screen.style.display  = 'inherit';
 			this.pano_screen.style.display = 'none';
+			if(this.pending_fit_bounds) {
+				this.map.fitBounds(this.pending_fit_bounds);
+				this.pending_fit_bounds = null;
+			}
 		}
 		else if(mode == "pano") {
 			this.map_screen.style.display = 'none';
@@ -1251,7 +1280,7 @@ my.Game = function(id, options) {
 			}
 			if(trig.pos && trig.heading) {
 				trig.lineelem = new google.maps.Polyline({
-					path:[trig.pos, my.geo_move(trig.pos, trig.heading+180, 100e3)],
+					path:[trig.pos, my.geo_move(trig.pos, trig.heading+180+this.compass_offset, 100e3)],
 					geodesic: true,
 					strokeColor: this.trig_get_color(trig.color),
 					strokeWeight: 2,
@@ -1278,6 +1307,27 @@ my.Game = function(id, options) {
 				this.mapdrawings.push(trig.panoelem);
 			}
 		}
+	}
+
+	this.autocompass_reset = function() {
+		this.autocompass_active = false;
+		this.autocompass.classList = "inactive";
+		this.compass_offset = 0;
+		this.trig_map_update();
+	}
+
+	this.autocompass_activate = function() {
+		var trigs = this.get_task().trigs;
+		if(trigs.length >= 3)
+			this.compass_offset = my.solve_compass_offset(trigs);
+		this.autocompass_active = true;
+			this.autocompass.classList = "active";
+		this.trig_map_update();
+	}
+
+	this.autocompass_toggle = function() {
+		if(this.autocompass_active) this.autocompass_reset();
+		else                        this.autocompass_activate();
 	}
 
 	this.get_task = function () {

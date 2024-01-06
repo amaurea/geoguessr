@@ -46,9 +46,13 @@
 #summary_info h1 { color: blue; }
 #summary_info td { text-align: right; }
 
+/* Sidebar */
+#leftbar   { position: absolute; top: 6rem; left: 5px; z-index: 12; }
+#leftbar * { box-sizing: border-box; }
+#leftbar > ul { list-style-type: none; padding: 0; margin: 0; width: 3rem; }
+#leftbar > ul li { position: relative; }
+
 /* Trigonometry widget */
-#trigwidget   { position: absolute; top: 6rem; left: 5px; z-index: 12; }
-#trigwidget * { box-sizing: border-box; }
 #trigwidget > ul { list-style-type: none; padding: 0; margin: 0; width: 3rem; }
 #trigwidget > ul li { position: relative; }
 #trigwidget .submenu li { display: inline-block; margin-left: 0.2rem; }
@@ -65,7 +69,9 @@
 	margin-bottom: 0.2rem;
 	background: black;
 	color: white;
+	user-select: none;
 }
+#leftbar .symbol { cursor: pointer; }
 #trigwidget li { pointer-events: none; }
 #trigwidget li .symbol { pointer-events: all; }
 #trigwidget .symbol img { width: 2.0rem; }
@@ -91,5 +97,7 @@
 #trigdel    .submenu { display: none; }
 #trigwidget .submenu { width: 90vw; }
 
-/* Mouse cursor for trigwidget */
-#trigwidget .symbol { cursor: pointer; }
+/* Auto-compass */
+#autocompass.inactive { filter:grayscale(1); }
+#autocompass.active   { filter:none; }
+#autocompass .symbol  { font-size: 2.0rem; }

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   id="Layer_1"
+   data-name="Layer 1"
+   viewBox="0 0 41.129761 41.129765"
+   version="1.1"
+   width="41.129761"
+   height="41.129765"
+   sodipodi:docname="compass_minimal.svg"
+   inkscape:version="1.3.2 (091e20ef0f, 2023-11-25, custom)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="19.183188"
+     inkscape:cx="20.564882"
+     inkscape:cy="20.564882"
+     inkscape:window-width="1920"
+     inkscape:window-height="995"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="Layer_1" />
+  <defs
+     id="defs17" />
+  <title
+     id="title1">Dusk Part 2</title>
+  <polygon
+     points="42.94,18.94 35.74,35.74 18.94,42.94 26.14,26.14 "
+     style="fill:#8080ff;fill-opacity:1"
+     id="polygon5"
+     transform="translate(-10.421182,-10.502288)" />
+  <polygon
+     points="35.74,35.74 26.14,26.14 42.94,18.94 "
+     style="fill:#ff7f7f;fill-opacity:1"
+     id="polygon6"
+     transform="translate(-10.421182,-10.502288)" />
+  <circle
+     cx="20.578817"
+     cy="20.497713"
+     r="2"
+     style="fill:#f9e3ae"
+     id="circle6" />
+  <path
+     d="m 19.578818,8.4977122 v -2.7 l 2.17,3.25 a 1,1 0 0 0 0.83,0.45 1,1 0 0 0 0.29,0 1,1 0 0 0 0.71,-1 v -6 a 1,1 0 0 0 -2,0 v 2.7 l -2.17,-3.25 a 1,1 0 0 0 -1.83,0.55 v 6 a 1,1 0 0 0 2,0 z"
+     style="fill:#ff7f7f;fill-opacity:1"
+     id="path7" />
+  <path
+     d="m 22.578818,33.497712 a 1,1 0 0 0 0,-2 h -3 a 2,2 0 0 0 -2,2 v 1 a 2,2 0 0 0 2,2 h 2 v 1 h -3 a 1,1 0 0 0 0,2 h 3 a 2,2 0 0 0 2,-2 v -1 a 2,2 0 0 0 -2,-2 h -2 v -1 z"
+     style="fill:#8080ff;fill-opacity:1"
+     id="path8" />
+  <metadata
+     id="metadata17">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>Dusk Part 2</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+</svg>
