@@ -58,6 +58,7 @@
 				zoom: 1,
 				clickableIcons: false,
 				zoomControlOptions: { position: google.maps.ControlPosition.TOP_LEFT },
+				gestureHandling: "greedy",
 			});
 			var path = new google.maps.Polygon({
 					path: new google.maps.MVCArray(),
@@ -70,8 +71,61 @@
 					map: map,
 				});
 			google.maps.event.addListener(map, 'click', function (e) {
-					path.getPath().push(e.latLng);
+					console.log(e);
+					if(e.domEvent.shiftKey) {
+						query_popinfo(e.latLng);
+					} else {
+						path.getPath().push(e.latLng);
+					}
 				});
+
+			// debug stuff, for letting us get the population
+			// density in a point. It will store the population
+			// density information, but won't be initialized until
+			// needed
+			var debug = {popinfo:null, latorder:null, lonorder:null, res:null};
+			async function query_popinfo(pos) {
+				if(!debug.popinfo) {
+					debug.popinfo = await geoguessr.read_popinfo("norge_tetthet_250.txt", 0, false);
+					debug.lonorder = geoguessr.argsort(debug.popinfo[0]);
+					debug.latorder = geoguessr.argsort(debug.popinfo[1]);
+					debug.res      = debug.popinfo[2][0]+debug.popinfo[3][0]*2;
+				}
+				// Find nearby cells
+				ilat1 = geoguessr.argbinsearch(debug.popinfo[1], debug.latorder, pos.lat()-debug.res);
+				ilat2 = geoguessr.argbinsearch(debug.popinfo[1], debug.latorder, pos.lat()+debug.res);
+				var cands = [];
+				for(var ilat = ilat1; ilat <= ilat2; ilat++) {
+					var i   = debug.latorder[ilat];
+					var lon = debug.popinfo[0][i];
+					if(lon >= pos.lng()-debug.res && lon <= pos.lng()+debug.res)
+						cands.push(i);
+				}
+				// Now find the one closest to our point
+				var besti    = -1;
+				var bestdist = 1e100;
+				var moo = [];
+				for(var ci = 0; ci < cands.length; ci++) {
+					// overkill
+					var i    = cands[ci];
+					var dist = google.maps.geometry.spherical.computeDistanceBetween(pos, new google.maps.LatLng(debug.popinfo[1][i], debug.popinfo[0][i]));
+					moo.push(dist);
+					if(dist < bestdist) {
+						besti = i;
+						bestdist = dist;
+					}
+				}
+				if(besti < 0) {
+					console.log("density", pos.lat(),pos.lng(),"no match")
+				} else {
+					// Finally make a popup with the density here
+					var w     = debug.popinfo[2][besti]*geoguessr.deg*geoguessr.earth_radius*Math.cos(pos.lat()*geoguessr.deg)/1e3;
+					var h     = debug.popinfo[3][besti]*geoguessr.deg*geoguessr.earth_radius/1e3;
+					var dens  = debug.popinfo[4][besti]/(w*h);
+					console.log("density",pos.lat(),pos.lng(),dens);
+				}
+			}
+
 			function load_settings() {
 				var options = {};
 				var query   = window.location.search.slice(1);

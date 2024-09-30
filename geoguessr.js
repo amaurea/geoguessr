@@ -117,6 +117,17 @@ my.binsearch = function(arr, val) {
 	return arr[b] > val ? a : arr.length;
 };
 
+my.argbinsearch = function(arr, order, val) {
+	var a = 0;
+	var b = arr.length-1;
+	while(b > a+1) {
+		var c = ((a+b)/2)|0;
+		if(arr[order[c]] <= val) a = c;
+		else b = c;
+	}
+	return arr[order[b]] > val ? a : arr.length;
+}
+
 // Random number generation. We do this ourselves because we want to
 // be able to seed it. Taken from
 // https://stackoverflow.com/questions/521295/seeding-the-random-number-generator-in-javascript
