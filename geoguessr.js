@@ -23,6 +23,13 @@ my.ang2latlng = function(ang) {
 my.latlng2rect = function(latlng) { return my.ang2rect(my.latlng2ang(latlng)); };
 my.rect2latlng = function(rect)   { return my.ang2latlng(my.rect2ang(rect));   };
 
+my.lists2latlng = function(lats, lngs) {
+	var points = [];
+	for(var i = 0; i < lats.length; i++)
+		points.push(new google.maps.LatLng(lats[i], lngs[i]))
+	return points;
+};
+
 // coordinate functions. These will be used to support getting the
 // coordinates under the mouse. This is only necessary because google
 // didn't publish this as part of their api
@@ -264,7 +271,7 @@ my.get_area = function(bounds) {
 }
 
 my.get_scale = function(points) {
-	if(points == null) return Math.PI*my.earth_radius;
+	if(points.length < 3) return Math.PI*my.earth_radius;
 	var bounds = my.get_bounds(points);
 	var area   = my.get_area(bounds);
 	var angrad = Math.sqrt(area);
@@ -289,7 +296,7 @@ my.format_time = function(t) {
 
 var _draw_position_state = {};
 my.draw_positions = function(npos, callback, options) {
-	var defaults = { 'nper': 10, prior: my.prior_uniform, radius: 100, cont: 0, mindist: 10, spread:false };
+	var defaults = { nper: 10, prior: my.prior_uniform, radius: 100, cont: 0, mindist: 10, spread:false };
 	var options  = my.apply_defaults(options, defaults);
 	if(!options.cont) _draw_position_state = {
 		datas: [], npos:npos, ntry:npos*options.nper, nres:0, options: options, callback: callback, mindist: options.mindist, ncum:0, nmax:1000 };
@@ -298,6 +305,7 @@ my.draw_positions = function(npos, callback, options) {
 	}
 	// Draw npos*nper candidate positions
 	for(var i = 0; i < _draw_position_state.ntry; i++) {
+		console.log("Submitting draw")
 		my.sv.getPanorama({
 			location: options.prior(),
 			radius: options.radius,
@@ -338,34 +346,17 @@ function _draw_position_helper(data, status) {
 
 my.get_positions = function(points, callback) {
 	_draw_position_state = {
-		datas: [], npos:points.length, nres:0, callback: callback };
+		datas: new Array(points.length), npos:points.length, nres:0, callback: callback };
 	// Loop up each point
-	for(var i = 0; i < points.length; i++)
-		my.sv.getPanorama({ location: points[i], radius: 20, preference: google.maps.StreetViewPreference.NEAREST }, _get_positions_helper);
-};
-
-function _get_positions_helper(data, status) {
-	var state = _draw_position_state;
-	if(status == 'OK') state.datas.push(data);
-	state.nres++;
-	if(state.nres == state.npos) {
-		//// Order is random at this point. Make it deterministic
-		state.datas = _draw_position_sorter_hash(state.datas);
-		state.callback(state.datas.slice(0,state.npos));
+	for(let i = 0; i < points.length; i++) {
+		var pano_query = { location: points[i], radius: 20, preference: google.maps.StreetViewPreference.NEAREST };
+		my.sv.getPanorama(pano_query, function (data, status) {
+			var state = _draw_position_state;
+			if(status == 'OK') state.datas[i] = data;
+			else console.error("No matching panorama for task " + (i+1) + "/" + points.length);
+			if(++state.nres == state.npos) state.callback(state.datas);
+		});
 	}
-};
-
-// "Random" but deterministic sort
-function _draw_position_sorter_hash(datas) {
-	return datas.sort(function (d1,d2) {
-		var pos1 = d1.location.latLng;
-		var pos2 = d2.location.latLng;
-		var s1 = pos1.lat()+","+pos1.lng();
-		var s2 = pos2.lat()+","+pos2.lng();
-		var h1 = my.hash(s1);
-		var h2 = my.hash(s2);
-		return h1 - h2;
-	});
 };
 
 my.range = function(n) {
@@ -513,6 +504,7 @@ my.format_summary_query = function(tasks) {
 	return "tlat="+lats_true+"&tlng="+lngs_true+"&glat="+lats_guess+"&glng="+lngs_guess+"&score="+scores+"&moved="+moved+"&times="+times;
 };
 
+// TODO: Make this support &game= too?
 my.parse_summary_query = function(query) {
 	query = unescape(query);
 	var toks  = query.split("&");
@@ -765,32 +757,108 @@ my.solve_compass_offset = function(trigs) {
 	return res.x[0];
 };
 
-// Construct a new game using the given map panorama and map
-my.Game = function(id, options) {
-	var game = this;
-	var query = (options == null ? null : options.query);
-	query = unescape(query);
-	var _opts = {};
-	_opts.ntask    = my.get_option_int("ntask",    options, query, 5);
-	_opts.maxscore = my.get_option_int("maxscore", options, query, 5000);
-	_opts.debug    = my.get_option_int("debug",    options, query, 0);
-	_opts.bounds   = my.get_option_points("bounds", "lat","lng", options, query, null);
-	_opts.roadonly = my.get_option_int("roadonly", options, query, 0);
-	_opts.nearest  = my.get_option_int("nearest",  options, query, 1);
-	_opts.seed     = my.get_option_int("seed",     options, query, null);
-	_opts.points   = my.get_option_points("points", "tlat", "tlng", options, query, null);
-	_opts.tol      = my.get_option_float("tol",    options, query, 0);
-	_opts.inactive = my.get_option_float("inactive",options,query, 30);
+my.default_game_desc = {
+	// load game from server?
+	game:     null,
+	// these are used to initialize the game
+	ntask:       5, maxscore: 5000,
+	debug:       0, bounds:     [],
+	roadonly:    0, nearest:     1,
+	// allow null for points to distinguish between
+	// points needing to be generated, and having been
+	// passed an explicitly empty list of points
+	seed:     null, points:   null,
+	tol:         0, inactive:   30,
+	// these are only used by build
+	spread:      0, popdens:     0,
+	mindens:     0,
+};
 
+my.load_game_desc = async function(query, options) {
+	desc_dflt  = {...my.default_game_desc, ...options};
+	desc_query = my.parse_game_desc(query);
+	desc = {...desc_dflt, ...desc_query};
+	if(desc.game != null) {
+		desc_server = await my.load_game_desc_server(desc.game);
+		desc = {...desc_dflt, ...desc_server, ...desc_query};
+	}
+	return desc;
+}
+
+my.load_game_desc_server = async function(id) {
+	var url = "games/game"+id+".txt";
+	var response = await fetch(url);
+	var data = await response.text();
+	var desc = my.parse_game_desc(data);
+	return desc;
+}
+
+my.parse_game_desc = function(query) {
+	if(!query) return {};
+	query = unescape(query);
+	var desc = {};
+	// Now parse query and get settings from there
+	var toks = query.split("&");
+	for(var i = 0; i < toks.length; i++) {
+		var [key, val] = toks[i].split("=");
+		if(["ntask", "maxscore", "debug", "roadonly", "nearest",
+			"seed", "spread", "popdens", "game"].includes(key)) desc[key] = parseInt(val);
+		else if(["lat", "lng", "tlat", "tlng"].includes(key)) desc[key] = atob(val).split(",").map(parseFloat);
+		else if(["tol", "inactive", "mindens"].includes(key)) desc[key] = parseFloat(val);
+		else console.warn("Unrecognized game desc key " + key);
+	}
+	// Turn lats and lons into bounds and points
+	if("lat" in desc && "lng" in desc)
+		desc.bounds = my.lists2latlng(desc.lat, desc.lng);
+	if("tlat" in desc && "tlng" in desc)
+		desc.points = my.lists2latlng(desc.tlat, desc.tlng);
+	return desc;
+}
+
+my.save_game_desc_server = async function(desc) {
+	var query = my.format_game_desc(desc);
+	try {
+		var response = await fetch("https://ur.amaurea.net:6011/geoguessr-save", {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/plain', },
+			body: escape(query),
+		});
+		var data = await response.text();
+		var id = parseInt(data);
+		return id;
+	} catch(error) {
+		console.error("Error saving " + query + " to "  + "https://ur.amaure.net:6011/geoguessr-save");
+	}
+}
+
+my.format_game_desc = function(desc) {
+	var res = "ntask="+desc.ntask+"&roadonly="+desc.roadonly+"&nearest="+desc.nearest+"&tol="+desc.tol+"&spread="+desc.spread+"&popdens="+desc.popdens+"&mindens="+desc.mindens;
+	if(desc.bounds.length >= 3) {
+		var lats = btoa(desc.bounds.map(function(pos) { return pos.lat().toFixed(6); }));
+		var lngs = btoa(desc.bounds.map(function(pos) { return pos.lng().toFixed(6); }));
+		res += "&lat=" + lats + "&lng=" + lngs;
+	}
+	if(desc.points) {
+		var lats = btoa(desc.points.map(function(pos) { return pos.lat().toFixed(6); }));
+		var lngs = btoa(desc.points.map(function(pos) { return pos.lng().toFixed(6); }));
+		res += "&tlat=" + lats + "&tlng=" + lngs;
+	}
+
+	return res;
+}
+
+// Construct a new game using the given map panorama and map
+my.Game = function(id, desc) {
+	var game = this;
 	this.container = document.getElementById(id);
-	this.maxscore  = _opts.maxscore;
-	this.debug     = _opts.debug;
-	this.bounds    = _opts.bounds;
-	this.roadonly  = _opts.roadonly;
-	this.nearest   = _opts.nearest;
-	this.seed      = _opts.seed;
-	this.tol       = _opts.tol;
-	this.inactive  = _opts.inactive;
+	this.maxscore  = desc.maxscore;
+	this.debug     = desc.debug;
+	this.bounds    = desc.bounds;
+	this.roadonly  = desc.roadonly;
+	this.nearest   = desc.nearest;
+	this.seed      = desc.seed;
+	this.tol       = desc.tol;
+	this.inactive  = desc.inactive;
 
 	this.time_prev_tick = Date.now();
 	this.time_prev_act  = Date.now();
@@ -800,7 +868,7 @@ my.Game = function(id, options) {
 	this.mode = "pano";
 	this.i = 0;
 	this.tasks = [];
-	for(var i = 0; i < _opts.ntask; i++) {
+	for(var i = 0; i < desc.ntask; i++) {
 		this.tasks[i] = {
 			score: 0,
 			data: null,
@@ -924,7 +992,7 @@ my.Game = function(id, options) {
 		icon: "markers/marker_green_dot.svg"});
 
 	// Draw bounding polygon if we have one
-	if(this.bounds != null)
+	if(this.bounds.length >= 3)
 		this.poly = new google.maps.Polygon({
 			path: this.bounds,
 			strokeColor: "red",
@@ -941,7 +1009,7 @@ my.Game = function(id, options) {
 		this.i = i;
 		var ieff = my.mod(i, this.tasks.length);
 		this.pano.setPano(this.tasks[ieff].data.location.pano);
-		if(this.bounds == null) {
+		if(this.bounds.length < 3) {
 			this.map.setCenter({lat:0,lng:0});
 			this.map.setZoom(1);
 		} else {
@@ -1114,6 +1182,7 @@ my.Game = function(id, options) {
 	var import_datas = function(datas) {
 		for(var i = 0; i < this.tasks.length; i++) {
 			this.tasks[i].data     = datas[i];
+			if(datas[i] == null) console.error("Error loading task " + (i+1) + "/" + this.tasks.length);
 			this.tasks[i].pos_true = datas[i].location.latLng;
 			this.tasks[i].pos_prev = this.tasks[i].pos_true;
 		}
@@ -1389,20 +1458,19 @@ my.Game = function(id, options) {
 	//this.map.addListener ("keydown", this.keyboard_handler_map);
 	//this.pano.addListener("keydown", this.keyboard_handler_pano);
 	this.keyboard_handler = function(e) {
-		console.log("moo", this, e);
 		if     (this.mode == "map")  this.keyboard_handler_map (e);
 		else if(this.mode == "pano") this.keyboard_handler_pano(e);
 	}.bind(game);
 
 	// Set up prior
-	if(this.bounds == null) prior = my.prior_uniform;
+	if(this.bounds.length < 3) prior = my.prior_uniform;
 	else prior = my.prior_poly_uniform.bind(null, this.bounds);
 
-	if(_opts.points == null) {
+	if(desc.points == null) {
 		// Draw points randomly
 		my.draw_positions(this.tasks.length, import_datas, {prior: prior, roadonly: this.roadonly, nearest: this.nearest});
 	} else {
-		my.get_positions(_opts.points, import_datas);
+		my.get_positions(desc.points, import_datas);
 	}
 
 	this.trig_menu_update();

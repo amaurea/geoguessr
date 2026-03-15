@@ -10,7 +10,7 @@
 		<script src=geoguessr.js></script>
 	</head>
 	<body>
-		<form action=guess.html method=GET name=form>
+		<form name=form>
 			<h1>Geoguessr builder</h1>
 			<table>
 				<tr><th>Rounds</th><td><input type=number id=ntask name=ntask value=5></td></tr>
@@ -48,8 +48,8 @@
 						<label for=tol>Award max score if closer than this in meters</label>
 					</td></tr>
 			</table>
-			<input type=submit id=submit_button onclick="handle_submit(); return false">
-			<button id=save_button onclick="save_settings(false)" form=dummy>Save</button>
+			<button id=submit_button onclick="submit(false)" form=dummy">Submit</button>
+			<button id=save_button   onclick="save(false)" form=dummy>Save</button>
 		</form>
 		<script>
 			var map_div = document.getElementById("map");
@@ -57,6 +57,7 @@
 				center: {lat:0,lng:0},
 				zoom: 1,
 				clickableIcons: false,
+				mapTypeId: google.maps.MapTypeId.SATELLITE,
 				zoomControlOptions: { position: google.maps.ControlPosition.TOP_LEFT },
 				gestureHandling: "greedy",
 			});
@@ -70,8 +71,10 @@
 					editable: true,
 					map: map,
 				});
+			// Will hold the point positions when generated
+			var points = null;
+
 			google.maps.event.addListener(map, 'click', function (e) {
-					console.log(e);
 					if(e.domEvent.shiftKey) {
 						query_popinfo(e.latLng);
 					} else {
@@ -126,30 +129,21 @@
 				}
 			}
 
-			function load_settings() {
-				var options = {};
-				var query   = window.location.search.slice(1);
-				var ntask    = geoguessr.get_option_int("ntask",    options, query, 5);
-				document.getElementById("ntask").value = ntask;
-				var roadonly = geoguessr.get_option_int("roadonly", options, query, 0);
-				document.getElementById("roadonly").checked = roadonly;
-				var nearest  = geoguessr.get_option_int("nearest",  options, query, 1);
-				document.getElementById("nearest").checked = !nearest;
-				var tol      = geoguessr.get_option_float("tol",    options, query, 0);
-				document.getElementById("tol").value = tol;
-				var spread   = geoguessr.get_option_int("spread",   options, query, 0);
-				document.getElementById("spread").checked = spread;
-				var popdens  = geoguessr.get_option_int("popdens",  options, query, 0);
-				document.getElementById("popdens").checked = popdens;
-				var mindens  = geoguessr.get_option_float("mindens",options, query, 0);
-				document.getElementById("mindens").value = mindens;
-				var bounds   = geoguessr.get_option_points("bounds", "lat","lng", options, query, null);
-				if(bounds != null) {
+			async function load_settings() {
+				var desc = await geoguessr.load_game_desc(window.location.search.slice(1));
+				document.getElementById("ntask").value = desc.ntask;
+				document.getElementById("roadonly").checked = desc.roadonly;
+				document.getElementById("nearest").checked = !desc.nearest;
+				document.getElementById("tol").value = desc.tol;
+				document.getElementById("spread").checked = desc.spread;
+				document.getElementById("popdens").checked = desc.popdens;
+				document.getElementById("mindens").value = desc.mindens;
+				if(desc.bounds.length >= 2) {
 					var boundsobj = new google.maps.LatLngBounds();
 					while(path.getPath().length > 0) path.getPath().pop();
-					for(var i = 0; i < bounds.length; i++) {
-						path.getPath().push(bounds[i]);
-						boundsobj.extend(bounds[i]);
+					for(var i = 0; i < desc.bounds.length; i++) {
+						path.getPath().push(desc.bounds[i]);
+						boundsobj.extend(desc.bounds[i]);
 					}
 					map.fitBounds(boundsobj);
 				}
@@ -157,25 +151,47 @@
 
 			load_settings();
 
-			function save_settings(passive) {
-				var ntask    = parseInt(document.getElementById("ntask").value)+0;
-				var roadonly = document.getElementById("roadonly").checked+0;
-				var nearest  = !document.getElementById("nearest").checked+0;
-				var tol      = parseFloat(document.getElementById("tol").value)+0;
-				var spread   = document.getElementById("spread").checked+0;
-				var popdens  = document.getElementById("popdens").checked+0;
-				var mindens  = parseFloat(document.getElementById("mindens").value);
-				var res = "ntask="+ntask+"&roadonly="+roadonly+"&nearest="+nearest+"&tol="+tol+"&spread="+spread+"&popdens="+popdens+"&mindens="+mindens;
-				var bounds   = path.getPath().getArray();
-				if(bounds.length >= 3) {
-					var lats = btoa(bounds.map(function(pos) { return pos.lat().toFixed(6); }));
-					var lngs = btoa(bounds.map(function(pos) { return pos.lng().toFixed(6); }));
-					res += "&lat=" + lats + "&lng=" + lngs;
-				}
-				var url = "build.html?" + res;
-				if(passive) history.replaceState(null, "dummy", url);
-				else window.location = url;
+			function settings_to_desc() {
+				var desc = {
+					ntask    : parseInt(document.getElementById("ntask").value)+0,
+					roadonly : document.getElementById("roadonly").checked+0,
+					nearest  : !document.getElementById("nearest").checked+0,
+					tol      : parseFloat(document.getElementById("tol").value)+0,
+					spread   : document.getElementById("spread").checked+0,
+					popdens  : document.getElementById("popdens").checked+0,
+					mindens  : parseFloat(document.getElementById("mindens").value),
+				};
+				var desc = {...geoguessr.default_game_desc, ...desc};
+				// Bounds
+				var bounds = path.getPath().getArray();
+				desc.bounds = bounds;
+				// Points
+				desc.points = points;
+				return desc;
 			}
+
+			async function _save(serverless) {
+				var desc  = settings_to_desc();
+				if(serverless) return geoguessr.format_game_desc(desc);
+				else {
+					var id = await geoguessr.save_game_desc_server(desc);
+					return "game="+id;
+				}
+			}
+
+			async function submit(serverless) {
+				points = await draw_points();
+				var query = await _save(serverless);
+				var url = "guess.html?" + query;
+				window.location = url;
+			}
+
+			// save settings without submitting
+			async function save(serverless) {
+				var query = await _save(serverless);
+				history.replaceState(null, "dummy", "build.html?" + query);
+			}
+
 			function undo_point() {
 				path.getPath().pop();
 			}
@@ -197,48 +213,33 @@
 				parent.appendChild(elem);
 			}
 
-			async function handle_submit() {
-				// Build bounds if necessary
-				var form = document.forms["form"];
-				var points = path.getPath().getArray();
-				save_settings(true);
-				del_hidden("lat");
-				del_hidden("lng");
-				if(points.length >= 3) {
-					add_hidden(form, "lat", btoa(points.map(function (point) { return point.lat().toFixed(6); }).join(",")));
-					add_hidden(form, "lng", btoa(points.map(function (point) { return point.lng().toFixed(6); }).join(",")));
-				}
-				// Handle randomness
-				//if (!document.getElementById("random").checked) {
-				// We don't want to reroll points each time, so roll them here instead
-				var  ntask    = parseInt(document.getElementById("ntask").value);
-				var  roadonly = document.getElementById("roadonly").checked;
-				var  nearest  = !document.getElementById("nearest").checked;
-				var  popdens  = document.getElementById("popdens").checked;
-				var  mindens  = parseFloat(document.getElementById("mindens").value);
-				var  spread   = document.getElementById("spread").checked;
+			async function draw_points() {
+				var desc = settings_to_desc();
 
 				// Handle the prior
-				if(popdens || mindens) {
+				if(desc.popdens || desc.mindens) {
 					// Convert from limit on population density to limit on pop in cell. Cells are 250m squared
-					var minpop  = mindens * 0.250**2;
+					var minpop  = desc.mindens * 0.250**2;
 					// This is a bit hacky, but this reads the population density, but skips cells below
 					// minpop, and if the last argument is true, gives all cells equal weight by overriding
 					// the population in the cell.
-					var popinfo = await geoguessr.read_popinfo("norge_tetthet_250.txt", minpop, !popdens);
-					if(points.length < 3) prior = geoguessr.prior_pop.bind(null, popinfo);
-					else prior = geoguessr.prior_poly_pop.bind(null, points, popinfo);
+					var popinfo = await geoguessr.read_popinfo("norge_tetthet_250.txt", minpop, !desc.popdens);
+					if(desc.bounds.length < 3) prior = geoguessr.prior_pop.bind(null, popinfo);
+					else prior = geoguessr.prior_poly_pop.bind(null, desc.bounds, popinfo);
 				} else {
-					if(points.length < 3) prior = geoguessr.prior_uniform;
-					else prior = geoguessr.prior_poly_uniform.bind(null, points);
+					if(desc.bounds.length < 3) prior = geoguessr.prior_uniform;
+					else prior = geoguessr.prior_poly_uniform.bind(null, desc.bounds);
 				}
-				geoguessr.draw_positions(ntask, function (datas) {
-					add_hidden(form, "tlat", btoa(datas.map(function (data) { return data.location.latLng.lat().toFixed(6); }).join(",")));
-					add_hidden(form, "tlng", btoa(datas.map(function (data) { return data.location.latLng.lng().toFixed(6); }).join(",")));
-					form.submit();
-				}, {prior: prior, roadonly: roadonly, nearest: nearest, spread:spread});
-				//}
-				//else form.submit();
+
+				var draw_settings = {prior: prior, roadonly: desc.roadonly, nearest: desc.nearest, spread:desc.spread};
+				return new Promise((resolve, reject) => {
+					geoguessr.draw_positions(desc.ntask,
+						function (datas) {
+							var points = datas.map(function (data) { return data.location.latLng; });
+							resolve(points);
+						}, draw_settings
+					);
+				});
 			}
 			document.addEventListener("keydown", handle_key);
 		</script>

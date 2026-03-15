@@ -1,3 +1,4 @@
+<!DOCTYPE HTML>
 <html>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 	<head>
@@ -14,23 +15,24 @@
 	<body>
 		<div id=game></div>
 		<script>
-			var game = new geoguessr.Game("game", {query: window.location.search.slice(1)})
-			document.addEventListener("keydown", game.keyboard_handler);
-			function handle_key(e) {
-				e = e || window.event;
-				if(e.keyCode == "J".charCodeAt(0))
-					game.set_task(game.i+1);
-				else if(e.keyCode == "K".charCodeAt(0))
-					game.set_task(game.i-1);
-				else if(e.keyCode == "M".charCodeAt(0))
-					game.set_mode(game.mode == "map" ? "pano" : "map");
+			game = null;
+			async function init() {
+				var query = window.location.search.slice(1);
+				var desc  = await geoguessr.load_game_desc(query);
+				game = new geoguessr.Game("game", desc);
+				document.addEventListener("keydown", game.keyboard_handler);
+				function handle_key(e) {
+					e = e || window.event;
+					if(e.keyCode == "J".charCodeAt(0))
+						game.set_task(game.i+1);
+					else if(e.keyCode == "K".charCodeAt(0))
+						game.set_task(game.i-1);
+					else if(e.keyCode == "M".charCodeAt(0))
+						game.set_mode(game.mode == "map" ? "pano" : "map");
+				}
+				document.addEventListener("keydown", handle_key);
 			}
-			document.addEventListener("keydown", handle_key);
-			//function moo(e) {
-			//	mpov = geoguessr.calc_mouse_pov(e, game.pano);
-			//	console.log(mpov);
-			//}
-			//game.pano_screen.addEventListener("mousemove", moo);
+			init();
 		</script>
 	</body>
 </html>
