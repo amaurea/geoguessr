@@ -797,6 +797,7 @@ my.Game = function(id, options) {
 
 	if(this.seed != null) my.srand(this.seed);
 
+	this.mode = "pano";
 	this.i = 0;
 	this.tasks = [];
 	for(var i = 0; i < _opts.ntask; i++) {
@@ -1119,6 +1120,12 @@ my.Game = function(id, options) {
 		this.set_task(0);
 	}.bind(this);
 
+	this.set_guess = function(pos) {
+		var task = this.get_task();
+		if(task.done) return;
+		task.pos_guess = pos;
+		this.update_markers();
+	}
 	
 	this.map.addListener("click", function(e) {
 		if(this.trig_registering) {
@@ -1128,10 +1135,7 @@ my.Game = function(id, options) {
 			this.trig_set_registering(false);
 			return false;
 		} else {
-			var task = this.get_task();
-			if(task.done) return;
-			task.pos_guess = e.latLng;
-			this.update_markers();
+			this.set_guess(e.latLng);
 		}
 	}.bind(this));
 
@@ -1356,6 +1360,39 @@ my.Game = function(id, options) {
 	this.pano_button.addEventListener("click", function(e) { this.set_mode("pano"); }.bind(this));
 	this.answer_button.addEventListener("click", this.handle_answer_button.bind(this));
 	this.reload_button.addEventListener("click", function(e) { this.set_task(this.i); }.bind(this));
+
+	// Keyboard controls
+	this.keyboard_handler_map = function(e) {
+		var step = 250;
+		if     (e.key == "a") this.map.panBy(-step,     0);
+		else if(e.key == "d") this.map.panBy(+step,     0);
+		else if(e.key == "w") this.map.panBy(    0, -step);
+		else if(e.key == "s") this.map.panBy(    0, +step);
+		else if(e.key == "+"     || e.key == "z") this.map.setZoom(this.map.getZoom()+1);
+		else if(e.key == "-"     || e.key == "x") this.map.setZoom(this.map.getZoom()-1);
+		else if(e.key == "Enter" || e.key == "p") this.set_guess(this.map.getCenter());
+		else if(e.key == "!") this.handle_answer_button();
+	}.bind(game);
+
+	this.keyboard_handler_pano = function(e) {
+		var step = 15;
+		if     (e.key == "a") { var p = this.pano.getPov(); p.heading -= step; this.pano.setPov(p); }
+		else if(e.key == "d") { var p = this.pano.getPov(); p.heading += step; this.pano.setPov(p); }
+		else if(e.key == "w") { var p = this.pano.getPov(); p.pitch   += step; this.pano.setPov(p); }
+		else if(e.key == "s") { var p = this.pano.getPov(); p.pitch   -= step; this.pano.setPov(p); }
+		else if(e.key == "f") { var p = this.pano.getPov(); p.pitch   += step; this.pano.setPov(p); }
+		else if(e.key == "b") { var p = this.pano.getPov(); p.pitch   -= step; this.pano.setPov(p); }
+		else if(e.key == "+" || e.key == "z") this.pano.setZoom(this.pano.getZoom()+1);
+		else if(e.key == "-" || e.key == "x") this.pano.setZoom(this.pano.getZoom()-1);
+	}.bind(game);
+
+	//this.map.addListener ("keydown", this.keyboard_handler_map);
+	//this.pano.addListener("keydown", this.keyboard_handler_pano);
+	this.keyboard_handler = function(e) {
+		console.log("moo", this, e);
+		if     (this.mode == "map")  this.keyboard_handler_map (e);
+		else if(this.mode == "pano") this.keyboard_handler_pano(e);
+	}.bind(game);
 
 	// Set up prior
 	if(this.bounds == null) prior = my.prior_uniform;

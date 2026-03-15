@@ -15,7 +15,7 @@
 		<div id=game></div>
 		<script>
 			var game = new geoguessr.Game("game", {query: window.location.search.slice(1)})
-
+			document.addEventListener("keydown", game.keyboard_handler);
 			function handle_key(e) {
 				e = e || window.event;
 				if(e.keyCode == "J".charCodeAt(0))

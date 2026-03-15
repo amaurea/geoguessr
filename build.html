@@ -181,7 +181,7 @@
 			}
 			function handle_key(e) {
 				e = e || window.event;
-				if(e.keyCode == 8)
+				if(e.key == "Delete")
 					undo_point();
 			}
 			function del_hidden(name) {
